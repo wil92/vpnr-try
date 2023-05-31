@@ -1,9 +1,9 @@
 use std::env;
-use std::net::TcpListener;
-use std::io::Read;
+use std::io::{Read, Write};
+use std::net::TcpStream;
 use std::thread;
 
-pub mod protocol;
+pub mod tcp;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -23,27 +23,41 @@ fn main() {
 
 fn start_server() {
     println!("Server start");
-    let listener = TcpListener::bind("127.0.0.1:4333").unwrap();
 
-    let mut handlers = Vec::new();
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(mut stream) => {
-                let handler = thread::spawn(move || {
-                    let mut buf = [0; 10];
-                    stream.read(&mut buf).unwrap();
+    tcp::tcp_server(
+        4334,
+        move |stream: &mut TcpStream, client: &mut TcpStream| {
+            let mut buf = [0; 10];
+            stream.read(&mut buf).unwrap();
 
-                    println!("read: {:?}", buf);
-                });
-
-                handlers.push(handler);
-            }
-            Err(_) => println!("couldn't get client: "),
-        }
-    }
+            client.write(&buf).unwrap();
+            println!("read: {:?}", buf);
+        },
+        |_, _| {},
+    );
 }
 
 fn start_client() {
     println!("Client start");
+
+    let mut to_server_stream = TcpStream::connect("127.0.0.1:4334").unwrap();
+
+    tcp::tcp_server(
+        4333,
+        &mut to_server_stream,
+        move |stream: &mut TcpStream, server: &mut TcpStream| {
+            let mut buf = [0; 10];
+            stream.read(&mut buf).unwrap();
+
+            server.write(&buf).unwrap();
+            println!("read: {:?}", buf);
+        },
+        move |stream: &mut TcpStream, server: &mut TcpStream| {
+            let mut buf = [0; 10];
+            server.read(&mut buf).unwrap();
+
+            stream.write(&buf);
+        },
+    );
 }

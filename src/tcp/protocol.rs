@@ -32,7 +32,7 @@ pub fn get_port(buf: &mut [u8; 1024], port: u16) {
 
 #[cfg(test)]
 mod tests {
-    use crate::protocol;
+    use crate::tcp::protocol;
 
     #[test]
     fn protocol_code_success() {
