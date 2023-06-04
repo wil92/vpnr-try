@@ -4,13 +4,15 @@ This is a first try to make a VPN service with rust. This project is just to stu
 
 ## Protocol
 
-||size|flags|addr|port|msg|
-|---|---|---|---|---|---|
-|size|2 bytes|1 byte|4 bytes|2 bytes|max 500 bytes|
+|          | size    | msg id  | flags  | addr    | port    | msg           |
+|----------|---------|---------|--------|---------|---------|---------------|
+| size     | 1 bytes | 2 bytes | 1 byte | 4 bytes | 2 bytes | max 500 bytes |
+| bytes    | 0       | 00      | 0      | 0000    | 00      | 0...498...0   |
 
 **Protocol description**
 
 - **size**: Message size, starting in the flag and ending in the last message character.
+- **msg id**: Message identification for the client.
 - **flags**: 8 bits flags to pass extra information.
 - **addr**: 4 bytes defining ipv4 destination address.
 - **port**: 2 bytes defining the destination port.

@@ -1,33 +1,97 @@
-pub fn code(msg: &[u8; 512], msg_len: usize, addr: u32, port: u16) -> ([u8; 1024], usize) {
-    let mut buf: [u8; 1024] = [0; 1024];
-
-    for i in 0..msg_len {
-        buf[9 + i] = msg[i];
+pub fn code_string(data: &[u8], data_len: usize, id_connection: u16) -> Vec<Vec<u8>> {
+    let mut res: Vec<Vec<u8>> = Vec::new();
+    let mut data_vec = Vec::new();
+    for i in 0..data_len {
+        data_vec.push(data[i]);
     }
-    let buf_len = msg_len + 9;
+    let mut bytes = data_vec.into_iter();
+    let mut byt = bytes.next();
+    loop {
+        if byt == None {
+            break;
+        }
+        let mut msg_byte: [u8; 200] = [0; 200];
+        let mut msg_len = 0;
+        while msg_len < 200 && byt != None {
+            msg_byte[msg_len] = byt.unwrap();
+            msg_len += 1;
+            byt = bytes.next();
+        }
+        res.push(code_block(&msg_byte, msg_len, id_connection, 0, 0));
+    }
+    res
+}
 
+pub fn decode_string(data: &[u8], data_len: usize) -> (Vec<(Vec<u8>, u16)>, usize) {
+    let mut res = Vec::new();
+    let mut shift = 0;
+    loop {
+        if shift >= data_len {
+            break;
+        }
+        let size = data[shift] as usize;
+        if size > 0 && data_len >= size + shift {
+            let mut id = (data[shift + 1] as u16) << 8;
+            id += data[shift + 2] as u16;
+
+            let mut msg = Vec::new();
+
+            for i in 0..(size - 10) {
+                msg.push(data[shift + i + 10]);
+            }
+
+            shift += size;
+
+            res.push((msg, id));
+        } else {
+            break;
+        }
+    }
+    (res, shift)
+}
+
+pub fn code_block(
+    msg: &[u8; 200],
+    msg_len: usize,
+    msg_id: u16,
+    addr: u32,
+    port: u16,
+) -> Vec<u8> {
+    let mut buf = Vec::new();
+
+    let buf_len = msg_len + 10;
     get_buf_len(&mut buf, buf_len);
+    get_msg_id(&mut buf, msg_id);
+    buf.push(0); // flags byte todo
     get_addr(&mut buf, addr);
     get_port(&mut buf, port);
 
-    (buf, buf_len)
+    for i in 0..msg_len {
+        buf.push(msg[i]);
+    }
+
+    buf
 }
 
-pub fn get_buf_len(buf: &mut [u8; 1024], buf_len: usize) {
-    buf[0] = ((buf_len >> 8) & 255) as u8;
-    buf[1] = (buf_len & 255) as u8;
+pub fn get_buf_len(buf: &mut Vec<u8>, buf_len: usize) {
+    buf.push((buf_len & 255) as u8);
 }
 
-pub fn get_addr(buf: &mut [u8; 1024], addr: u32) {
-    buf[2] = ((addr >> 24) & 255) as u8;
-    buf[3] = ((addr >> 16) & 255) as u8;
-    buf[4] = ((addr >> 8) & 255) as u8;
-    buf[5] = (addr & 255) as u8;
+pub fn get_msg_id(buf: &mut Vec<u8>, msg_id: u16) {
+    buf.push(((msg_id >> 8) & 255) as u8);
+    buf.push((msg_id & 255) as u8);
 }
 
-pub fn get_port(buf: &mut [u8; 1024], port: u16) {
-    buf[6] = ((port >> 8) & 255) as u8;
-    buf[7] = (port & 255) as u8;
+pub fn get_addr(buf: &mut Vec<u8>, addr: u32) {
+    buf.push(((addr >> 24) & 255) as u8);
+    buf.push(((addr >> 16) & 255) as u8);
+    buf.push(((addr >> 8) & 255) as u8);
+    buf.push((addr & 255) as u8);
+}
+
+pub fn get_port(buf: &mut Vec<u8>, port: u16) {
+    buf.push(((port >> 8) & 255) as u8);
+    buf.push((port & 255) as u8);
 }
 
 #[cfg(test)]
@@ -35,46 +99,107 @@ mod tests {
     use crate::tcp::protocol;
 
     #[test]
-    fn protocol_code_success() {
+    fn protocol_decode_string_test() {
+        let data = String::from("asdf asdf asdfasdf asdf");
+        let res = protocol::code_string(data.as_bytes(), data.len(), 1);
+        let code_data = &res[0];
+        let mut data2 = [0; 200];
+        for i in 0..code_data.len() {
+            data2[i] = code_data[i];
+            data2[i + code_data.len()] = code_data[i];
+            data2[i + code_data.len() * 2] = code_data[i];
+        }
+        let (res, shift) = protocol::decode_string(&data2, code_data.len() * 2 + 10);
+        assert_eq!(2, res.len());
+        assert_eq!(code_data.len() * 2, shift);
+        let origin_data = data.as_bytes();
+        assert_eq!(data.len(), res[0].0.len());
+        for i in 0..res[0].0.len() {
+            assert_eq!(origin_data[i], res[0].0[i]);
+        }
+    }
+
+    #[test]
+    fn protocol_code_string_test_codification() {
+        let data = String::from("asdf asdf asdfasdf asdf");
+        let res = protocol::code_string(data.as_bytes(), data.len(), 1);
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].len(), data.len() + 10);
+        assert_eq!(res[0][2], 1);
+        let data_bytes = data.as_bytes();
+        for i in 0..data.len() {
+            assert_eq!(data_bytes[i], res[0][i + 10]);
+        }
+    }
+
+    #[test]
+    fn protocol_code_string_test_chunks() {
+        let mut data = String::from("");
+        for _ in 0..2150 {
+            data.push_str("w");
+        }
+        let res = protocol::code_string(data.as_bytes(), data.len(), 1);
+        assert_eq!(res.len(), 11);
+    }
+
+    #[test]
+    fn protocol_code_block_success() {
         let msg = String::from("some");
         let msg_u8 = msg.as_bytes();
-        let mut msg_u8_pre: [u8; 512] = [0; 512];
+        let mut msg_u8_pre: [u8; 200] = [0; 200];
         for (i, _) in msg_u8.iter().enumerate() {
             msg_u8_pre[i] = msg_u8[i];
         }
-        let (res, res_len) = protocol::code(&msg_u8_pre, msg.len(), 13, 5443);
+        let res = protocol::code_block(&msg_u8_pre, msg.len(), 432, 13, 5443);
 
-        let expected: [u8; 1024] = [0; 1024];
-        assert_eq!(res_len, msg.len() + 9);
+        let expected: &[u8] = "some".as_bytes();
+        assert_eq!(res.len(), msg.len() + 10);
+        for i in 0..4 {
+            assert_eq!(res[i + 10], expected[i]);
+        }
+
+        assert_eq!(res[1], 1);
+        assert_eq!(res[2], 176);
+
+        assert_eq!(res[4], 0);
+        assert_eq!(res[5], 0);
+        assert_eq!(res[6], 0);
+        assert_eq!(res[7], 13);
+
+        assert_eq!(res[8], 21);
+        assert_eq!(res[9], 67);
     }
 
     #[test]
     fn protocol_buf_len_calculation() {
-        let mut buf: [u8; 1024] = [0; 1024];
+        let mut buf = Vec::new();
         protocol::get_buf_len(&mut buf, 255);
-        assert_eq!(buf[0], 0);
-        assert_eq!(buf[1], 255);
+        assert_eq!(buf[0], 255);
+    }
 
-        protocol::get_buf_len(&mut buf, 511);
-        assert_eq!(buf[0], 1);
+    #[test]
+    fn protocol_msg_id_calculation() {
+        let mut buf = Vec::new();
+        protocol::get_msg_id(&mut buf, 1279);
+        assert_eq!(buf[0], 4);
         assert_eq!(buf[1], 255);
     }
 
     #[test]
     fn protocol_addr_calculation() {
-        let mut buf: [u8; 1024] = [0; 1024];
+        let mut buf = Vec::new();
         protocol::get_addr(&mut buf, 4294967295);
+        assert_eq!(buf[0], 255);
+        assert_eq!(buf[1], 255);
         assert_eq!(buf[2], 255);
         assert_eq!(buf[3], 255);
-        assert_eq!(buf[4], 255);
-        assert_eq!(buf[5], 255);
     }
 
     #[test]
     fn protocol_port_calculation() {
-        let mut buf: [u8; 1024] = [0; 1024];
+        let mut buf = Vec::new();
         protocol::get_port(&mut buf, 65535);
-        assert_eq!(buf[6], 255);
-        assert_eq!(buf[7], 255);
+        assert_eq!(buf[0], 255);
+        assert_eq!(buf[1], 255);
     }
 }
