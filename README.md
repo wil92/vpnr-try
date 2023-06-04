@@ -20,11 +20,14 @@ This is a first try to make a VPN service with rust. This project is just to stu
 
 ## ToDo
 
-- Start client
-    - Start lissening in port to get all the traffic connections
-- Start communication between server and client
-    - Start server
-    - Connect client to server
-    - Send all received trafic in the client to the server, using the protocol
-- Handle iptables to redirect all trafic to the client app.
+- [x] Start client
+    - [x] Start lissening in port to get all the traffic connections
+- [x] Start communication between server and client
+    - [x] Start server
+    - [x] Connect client to server
+    - [x] Send all received trafic in the client to the server, using the protocol
+    - [ ] Connect server to the destination addr/port and send response to the client
+- [ ] Handle iptables to redirect all trafic to the client app.
+- [ ] Handle server disconnection from the client (try to connect againg to the server).
+- [ ] Massive refactorization :P
 
