@@ -1,4 +1,10 @@
-pub fn code_string(data: &[u8], data_len: usize, id_connection: u16) -> Vec<Vec<u8>> {
+pub fn code_string(
+    data: &[u8],
+    data_len: usize,
+    id_connection: u16,
+    addr: u32,
+    port: u16,
+) -> Vec<Vec<u8>> {
     let mut res: Vec<Vec<u8>> = Vec::new();
     let mut data_vec = Vec::new();
     for i in 0..data_len {
@@ -17,12 +23,12 @@ pub fn code_string(data: &[u8], data_len: usize, id_connection: u16) -> Vec<Vec<
             msg_len += 1;
             byt = bytes.next();
         }
-        res.push(code_block(&msg_byte, msg_len, id_connection, 0, 0));
+        res.push(code_block(&msg_byte, msg_len, id_connection, addr, port));
     }
     res
 }
 
-pub fn decode_string(data: &[u8], data_len: usize) -> (Vec<(Vec<u8>, u16)>, usize) {
+pub fn decode_string(data: &[u8], data_len: usize) -> (Vec<(Vec<u8>, u16, u32, u16)>, usize) {
     let mut res = Vec::new();
     let mut shift = 0;
     loop {
@@ -32,7 +38,16 @@ pub fn decode_string(data: &[u8], data_len: usize) -> (Vec<(Vec<u8>, u16)>, usiz
         let size = data[shift] as usize;
         if size > 0 && data_len >= size + shift {
             let mut id = (data[shift + 1] as u16) << 8;
+
             id += data[shift + 2] as u16;
+
+            let mut addr = (data[shift + 4] as u32) << 24;
+            addr += (data[shift + 5] as u32) << 16;
+            addr += (data[shift + 6] as u32) << 8;
+            addr += data[shift + 7] as u32;
+
+            let mut port = (data[shift + 8] as u16) << 8;
+            port += data[shift + 9] as u16;
 
             let mut msg = Vec::new();
 
@@ -42,7 +57,7 @@ pub fn decode_string(data: &[u8], data_len: usize) -> (Vec<(Vec<u8>, u16)>, usiz
 
             shift += size;
 
-            res.push((msg, id));
+            res.push((msg, id, addr, port));
         } else {
             break;
         }
@@ -50,13 +65,7 @@ pub fn decode_string(data: &[u8], data_len: usize) -> (Vec<(Vec<u8>, u16)>, usiz
     (res, shift)
 }
 
-pub fn code_block(
-    msg: &[u8; 200],
-    msg_len: usize,
-    msg_id: u16,
-    addr: u32,
-    port: u16,
-) -> Vec<u8> {
+pub fn code_block(msg: &[u8; 200], msg_len: usize, msg_id: u16, addr: u32, port: u16) -> Vec<u8> {
     let mut buf = Vec::new();
 
     let buf_len = msg_len + 10;
@@ -101,7 +110,7 @@ mod tests {
     #[test]
     fn protocol_decode_string_test() {
         let data = String::from("asdf asdf asdfasdf asdf");
-        let res = protocol::code_string(data.as_bytes(), data.len(), 1);
+        let res = protocol::code_string(data.as_bytes(), data.len(), 1, 2383468972, 0);
         let code_data = &res[0];
         let mut data2 = [0; 200];
         for i in 0..code_data.len() {
@@ -113,6 +122,14 @@ mod tests {
         assert_eq!(2, res.len());
         assert_eq!(code_data.len() * 2, shift);
         let origin_data = data.as_bytes();
+
+        // validate id
+        assert_eq!(1, res[0].1);
+        // validate addr
+        assert_eq!(res[0].2, 2383468972);
+        // validate port
+        assert_eq!(res[0].3, 0);
+
         assert_eq!(data.len(), res[0].0.len());
         for i in 0..res[0].0.len() {
             assert_eq!(origin_data[i], res[0].0[i]);
@@ -122,10 +139,21 @@ mod tests {
     #[test]
     fn protocol_code_string_test_codification() {
         let data = String::from("asdf asdf asdfasdf asdf");
-        let res = protocol::code_string(data.as_bytes(), data.len(), 1);
+        let res = protocol::code_string(data.as_bytes(), data.len(), 1, 2383468972, 80);
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].len(), data.len() + 10);
+
+        // validate id
         assert_eq!(res[0][2], 1);
+        // validate addr
+        assert_eq!(res[0][4], 142);
+        assert_eq!(res[0][5], 16);
+        assert_eq!(res[0][6], 217);
+        assert_eq!(res[0][7], 172);
+        // validate port
+        assert_eq!(res[0][8], 0);
+        assert_eq!(res[0][9], 80);
+
         let data_bytes = data.as_bytes();
         for i in 0..data.len() {
             assert_eq!(data_bytes[i], res[0][i + 10]);
@@ -138,7 +166,7 @@ mod tests {
         for _ in 0..2150 {
             data.push_str("w");
         }
-        let res = protocol::code_string(data.as_bytes(), data.len(), 1);
+        let res = protocol::code_string(data.as_bytes(), data.len(), 1, 0, 0);
         assert_eq!(res.len(), 11);
     }
 

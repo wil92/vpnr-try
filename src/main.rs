@@ -4,6 +4,9 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
 
+use nix::sys::socket::{self, sockopt};
+use std::os::fd::AsRawFd;
+
 use crate::tcp::protocol;
 
 pub mod tcp;
@@ -29,21 +32,53 @@ fn start_server() {
 
     tcp::tcp_server(
         4334,
-        move |client: &mut TcpStream| loop {
-            let mut buf = [0; 200];
-            match client.read(&mut buf) {
-                Ok(ct) => {
-                    if ct == 0 {
+        move |client: &mut TcpStream| {
+            let mut remain: Vec<u8> = Vec::new();
+            loop {
+                let mut buf = [0; 200];
+                match client.read(&mut buf) {
+                    Ok(ct) => {
+                        if ct == 0 {
+                            break;
+                        }
+                        let mut ext_buf: Vec<u8> = Vec::new();
+                        ext_buf.append(&mut remain);
+                        for i in 0..ct {
+                            ext_buf.push(buf[i]);
+                        }
+
+                        let (messages, rd) = protocol::decode_string(&ext_buf, ext_buf.len());
+                        for msg in messages {
+                            let msg_id = msg.1;
+                            let addr = msg.2;
+                            let port = msg.3;
+                            
+                            println!(
+                                "{}, addr: {}.{}.{}.{}, port: {}",
+                                addr,
+                                addr & 255,
+                                (addr >> 8) & 255,
+                                (addr >> 16) & 255,
+                                (addr >> 24) & 255,
+                                port
+                            );
+                        }
+
+                        if rd != ext_buf.len() {
+                            for i in rd..ext_buf.len() {
+                                remain.push(ext_buf[i]);
+                            }
+                        }
+
+                        let mut extra_buf: Vec<u8> = Vec::new();
+                        for i in 0..ct {
+                            extra_buf.push(buf[i]);
+                        }
+                        client.write_all(&extra_buf).unwrap();
+                    }
+                    Err(_) => {
                         break;
                     }
-                    let mut extra_buf: Vec<u8> = Vec::new();
-                    for i in 0..ct {
-                        extra_buf.push(buf[i]);
-                    }
-                    client.write_all(&extra_buf).unwrap();
-                }
-                Err(_) => {
-                    break;
                 }
             }
         },
@@ -68,7 +103,25 @@ fn start_client() {
                         break;
                     }
 
-                    let messages = protocol::code_string(&buf, ct, id_connection);
+                    let sock_fd = stream.as_raw_fd();
+                    let original_addr = socket::getsockopt(sock_fd, sockopt::OriginalDst).unwrap();
+                    println!(
+                        "{}, addr: {}.{}.{}.{}, port: {}",
+                        original_addr.sin_addr.s_addr,
+                        original_addr.sin_addr.s_addr & 255,
+                        (original_addr.sin_addr.s_addr >> 8) & 255,
+                        (original_addr.sin_addr.s_addr >> 16) & 255,
+                        (original_addr.sin_addr.s_addr >> 24) & 255,
+                        u16::from_be(original_addr.sin_port)
+                    );
+
+                    let messages = protocol::code_string(
+                        &buf,
+                        ct,
+                        id_connection,
+                        original_addr.sin_addr.s_addr,
+                        u16::from_be(original_addr.sin_port),
+                    );
 
                     for msg in messages {
                         server.write_all(&msg).unwrap();
