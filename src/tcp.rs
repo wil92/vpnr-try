@@ -18,7 +18,7 @@ pub fn tcp_client(
 ) {
     let listener = TcpListener::bind(format!("127.0.0.1:{client_port}")).unwrap();
 
-    let to_server_stream = TcpStream::connect(format!("127.0.0.1:{server_port}")).unwrap();
+    let to_server_stream = TcpStream::connect(format!("guilledev.com:{server_port}")).unwrap();
 
     let mut id_cont: u16 = 0;
     let apps_map: HashMap<u16, TcpStream> = HashMap::new();
@@ -62,7 +62,7 @@ pub fn tcp_client(
 }
 
 pub fn tcp_server(port: i32, f: fn(&mut TcpStream), f2: fn(&mut TcpStream)) {
-    let listener = TcpListener::bind(format!("127.0.0.1:{port}")).unwrap();
+    let listener = TcpListener::bind(format!("0.0.0.0:{port}")).unwrap();
 
     for stream in listener.incoming() {
         match stream {
