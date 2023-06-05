@@ -46,8 +46,8 @@ sudo iptables -t nat -F
     - [x] Start server
     - [x] Connect client to server
     - [x] Send all received trafic in the client to the server, using the protocol
-    - [ ] Get addr and port from redirection information
-    - [ ] Connect server to the destination addr/port and send response to the client
+    - [x] Get addr and port from redirection information
+    - [x] Connect server to the destination addr/port and send response to the client
 - [ ] Handle iptables to redirect all trafic to the client app.
 - [ ] Handle server disconnection from the client (try to connect againg to the server).
 - [ ] Massive refactorization :P
