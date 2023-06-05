@@ -3,7 +3,6 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-
 pub mod protocol;
 
 pub fn tcp_client(
@@ -36,9 +35,7 @@ pub fn tcp_client(
             Ok(stream) => {
                 let mut shared_map_ref = shared_map.lock().unwrap();
 
-
                 shared_map_ref.insert(id_cont, stream);
-
 
                 let mut stream_read = shared_map_ref
                     .get(&id_cont)

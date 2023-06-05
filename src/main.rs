@@ -3,6 +3,7 @@ use std::env;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
+use std::thread;
 
 use nix::sys::socket::{self, sockopt};
 use std::os::fd::AsRawFd;
@@ -33,6 +34,9 @@ fn start_server() {
     tcp::tcp_server(
         4334,
         move |client: &mut TcpStream| {
+            let redirection_map: HashMap<u16, TcpStream> = HashMap::new();
+            let redirection_map_ref = Arc::new(Mutex::new(redirection_map));
+
             let mut remain: Vec<u8> = Vec::new();
             loop {
                 let mut buf = [0; 200];
@@ -52,7 +56,7 @@ fn start_server() {
                             let msg_id = msg.1;
                             let addr = msg.2;
                             let port = msg.3;
-                            
+
                             println!(
                                 "{}, addr: {}.{}.{}.{}, port: {}",
                                 addr,
@@ -62,6 +66,88 @@ fn start_server() {
                                 (addr >> 24) & 255,
                                 port
                             );
+
+                            let mut stream_dest: TcpStream;
+                            let stream_exist: bool;
+                            {
+                                stream_exist =
+                                    redirection_map_ref.lock().unwrap().contains_key(&msg_id);
+                            }
+                            if !stream_exist {
+                                println!("aaaaaaaa");
+                                match TcpStream::connect(format!(
+                                    "{}.{}.{}.{}:{}",
+                                    addr & 255,
+                                    (addr >> 8) & 255,
+                                    (addr >> 16) & 255,
+                                    (addr >> 24) & 255,
+                                    port
+                                )) {
+                                    Ok(stream) => {
+                                        println!("bbbbbbbbbb");
+                                        {
+                                            let mut rf = redirection_map_ref.lock().unwrap();
+                                            rf.insert(msg_id, stream);
+                                            stream_dest = rf
+                                                .get(&msg_id)
+                                                .unwrap()
+                                                .try_clone()
+                                                .expect("error");
+                                        }
+                                        println!("ccccccccc");
+
+                                        let redirectino_map_ref_clone = redirection_map_ref.clone();
+                                        let msg_id_ref = msg_id;
+                                        let mut stream_ref = stream_dest
+                                            .try_clone()
+                                            .expect("Can't clone redirection stream");
+                                        let mut client_ref = client.try_clone().expect("asdf");
+                                        thread::spawn(move || loop {
+                                            let mut buf = [0; 200];
+                                            match stream_ref.read(&mut buf) {
+                                                Ok(ct) => {
+                                                    println!("res..... {}", ct);
+                                                    if ct == 0 {
+                                                        let mut rf = redirectino_map_ref_clone
+                                                            .lock()
+                                                            .unwrap();
+                                                        rf.get(&msg_id_ref)
+                                                            .unwrap()
+                                                            .shutdown(std::net::Shutdown::Both)
+                                                            .unwrap();
+                                                        rf.remove(&msg_id_ref);
+                                                        break;
+                                                    }
+
+                                                    let messages = protocol::code_string(
+                                                        &buf, ct, msg_id_ref, 0, 0,
+                                                    );
+
+                                                    for msg in messages {
+                                                        client_ref.write_all(&msg).unwrap();
+                                                    }
+                                                }
+                                                Err(_) => {
+                                                    println!("asdf");
+                                                }
+                                            }
+                                        });
+                                    }
+                                    Err(_) => {
+                                        // send disconnection to the client
+                                        println!("error");
+                                        continue;
+                                    }
+                                }
+                            } else {
+                                {
+                                    let rf = redirection_map_ref.lock().unwrap();
+                                    stream_dest =
+                                        rf.get(&msg_id).unwrap().try_clone().expect("error");
+                                }
+                            }
+
+                            stream_dest.write_all(&msg.0).unwrap();
                         }
 
                         if rd != ext_buf.len() {
@@ -70,11 +156,11 @@ fn start_server() {
                             }
                         }
 
-                        let mut extra_buf: Vec<u8> = Vec::new();
-                        for i in 0..ct {
-                            extra_buf.push(buf[i]);
-                        }
-                        client.write_all(&extra_buf).unwrap();
+                        // let mut extra_buf: Vec<u8> = Vec::new();
+                        // for i in 0..ct {
+                        //     extra_buf.push(buf[i]);
+                        // }
+                        // client.write_all(&extra_buf).unwrap();
                     }
                     Err(_) => {
                         break;
