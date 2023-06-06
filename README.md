@@ -33,6 +33,7 @@ sudo iptables -t nat -A OUTPUT -p tcp -d google.com --dport 443 -j REDIRECT --to
 sudo iptables -t nat -L --line-number
 
 # remove a particular iptable rule
+sudo iptables -t nat -D OUTPUT 2
 sudo iptables -t nat -D OUTPUT <line-num>
 
 # clear iptables
@@ -48,7 +49,7 @@ sudo iptables -t nat -F
     - [x] Send all received trafic in the client to the server, using the protocol
     - [x] Get addr and port from redirection information
     - [x] Connect server to the destination addr/port and send response to the client
-- [ ] Handle iptables to redirect all trafic to the client app.
-- [ ] Handle server disconnection from the client (try to connect againg to the server).
+- [ ] Send notification to the client when a redirection connection is down, so the client can close it also with the applicationr
 - [ ] Massive refactorization :P
-
+- [ ] Handle server disconnection from the client (try to connect againg to the server).
+- [ ] Handle iptables to redirect all trafic to the client app.

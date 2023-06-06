@@ -12,6 +12,8 @@ use crate::tcp::protocol;
 
 pub mod tcp;
 
+const CONNECTION_FAIL: u8 = 1;
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     let mut run_server = false;
@@ -54,8 +56,9 @@ fn start_server() {
                         let (messages, rd) = protocol::decode_string(&ext_buf, ext_buf.len());
                         for msg in messages {
                             let msg_id = msg.1;
-                            let addr = msg.2;
-                            let port = msg.3;
+                            // let flags = msg.2;
+                            let addr = msg.3;
+                            let port = msg.4;
 
                             println!(
                                 "{}, addr: {}.{}.{}.{}, port: {}",
@@ -74,7 +77,6 @@ fn start_server() {
                                     redirection_map_ref.lock().unwrap().contains_key(&msg_id);
                             }
                             if !stream_exist {
-                                println!("aaaaaaaa");
                                 match TcpStream::connect(format!(
                                     "{}.{}.{}.{}:{}",
                                     addr & 255,
@@ -84,7 +86,6 @@ fn start_server() {
                                     port
                                 )) {
                                     Ok(stream) => {
-                                        println!("bbbbbbbbbb");
                                         {
                                             let mut rf = redirection_map_ref.lock().unwrap();
                                             rf.insert(msg_id, stream);
@@ -94,9 +95,8 @@ fn start_server() {
                                                 .try_clone()
                                                 .expect("error");
                                         }
-                                        println!("ccccccccc");
 
-                                        let redirectino_map_ref_clone = redirection_map_ref.clone();
+                                        let redirection_map_ref_clone = redirection_map_ref.clone();
                                         let msg_id_ref = msg_id;
                                         let mut stream_ref = stream_dest
                                             .try_clone()
@@ -106,21 +106,28 @@ fn start_server() {
                                             let mut buf = [0; 200];
                                             match stream_ref.read(&mut buf) {
                                                 Ok(ct) => {
-                                                    println!("res..... {}", ct);
                                                     if ct == 0 {
-                                                        let mut rf = redirectino_map_ref_clone
+                                                        let mut rf = redirection_map_ref_clone
                                                             .lock()
                                                             .unwrap();
-                                                        rf.get(&msg_id_ref)
-                                                            .unwrap()
-                                                            .shutdown(std::net::Shutdown::Both)
-                                                            .unwrap();
                                                         rf.remove(&msg_id_ref);
+
+                                                        let close_buff = protocol::code_block(
+                                                            b"",
+                                                            0,
+                                                            msg_id_ref,
+                                                            CONNECTION_FAIL,
+                                                            0,
+                                                            0,
+                                                        );
+                                                        client_ref
+                                                            .write_all(&close_buff)
+                                                            .unwrap();
                                                         break;
                                                     }
 
                                                     let messages = protocol::code_string(
-                                                        &buf, ct, msg_id_ref, 0, 0,
+                                                        &buf, ct, msg_id_ref, 0, 0, 0,
                                                     );
 
                                                     for msg in messages {
@@ -205,6 +212,7 @@ fn start_client() {
                         &buf,
                         ct,
                         id_connection,
+                        0,
                         original_addr.sin_addr.s_addr,
                         u16::from_be(original_addr.sin_port),
                     );
@@ -238,9 +246,16 @@ fn start_client() {
 
                         let (messages, rd) = protocol::decode_string(&ext_buf, ext_buf.len());
                         for msg in messages {
-                            let streams_shared_ref = streams_shared.lock().unwrap();
+                            let mut streams_shared_ref = streams_shared.lock().unwrap();
+                            let flags = msg.2;
+
                             match streams_shared_ref.get(&msg.1) {
                                 Some(mut stream) => {
+                                    if flags & CONNECTION_FAIL != 0 {
+                                        stream.shutdown(std::net::Shutdown::Both).unwrap();
+                                        streams_shared_ref.remove(&msg.1).unwrap();
+                                        continue;
+                                    }
                                     stream.write_all(&msg.0).unwrap();
                                 }
                                 None => {}
