@@ -120,9 +120,7 @@ fn start_server() {
                                                             0,
                                                             0,
                                                         );
-                                                        client_ref
-                                                            .write_all(&close_buff)
-                                                            .unwrap();
+                                                        client_ref.write_all(&close_buff).unwrap();
                                                         break;
                                                     }
 
@@ -131,7 +129,9 @@ fn start_server() {
                                                     );
 
                                                     for msg in messages {
-                                                        client_ref.write_all(&msg).unwrap();
+                                                        if let Err(_) = client_ref.write_all(&msg) {
+                                                            break;
+                                                        }
                                                     }
                                                 }
                                                 Err(_) => {
@@ -147,11 +147,8 @@ fn start_server() {
                                     }
                                 }
                             } else {
-                                {
-                                    let rf = redirection_map_ref.lock().unwrap();
-                                    stream_dest =
-                                        rf.get(&msg_id).unwrap().try_clone().expect("error");
-                                }
+                                let rf = redirection_map_ref.lock().unwrap();
+                                stream_dest = rf.get(&msg_id).unwrap().try_clone().expect("error");
                             }
 
                             stream_dest.write_all(&msg.0).unwrap();
@@ -162,12 +159,6 @@ fn start_server() {
                                 remain.push(ext_buf[i]);
                             }
                         }
-
-                        // let mut extra_buf: Vec<u8> = Vec::new();
-                        // for i in 0..ct {
-                        //     extra_buf.push(buf[i]);
-                        // }
-                        // client.write_all(&extra_buf).unwrap();
                     }
                     Err(_) => {
                         break;
@@ -252,7 +243,7 @@ fn start_client() {
                             match streams_shared_ref.get(&msg.1) {
                                 Some(mut stream) => {
                                     if flags & CONNECTION_FAIL != 0 {
-                                        stream.shutdown(std::net::Shutdown::Both).unwrap();
+                                        if let Ok(_) = stream.shutdown(std::net::Shutdown::Both) {}
                                         streams_shared_ref.remove(&msg.1).unwrap();
                                         continue;
                                     }
