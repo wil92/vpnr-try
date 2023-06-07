@@ -19,6 +19,10 @@ This is a first try to make a VPN service with rust. This project is just to stu
 - **port**: 2 bytes defining the destination port.
 - **msg**: The message with not more than 512 byte length.
 
+| 0                | 1  | 2  | 3  | 4  | 5  | 6  | 7  |
+|------------------|----|----|----|----|----|----|----|
+| Connection close | NA | NA | NA | NA | NA | NA | NA |
+
 ## iptables commands
 
 ```

@@ -51,9 +51,9 @@ impl Client {
                   streams_shared: Arc<Mutex<HashMap<u16, TcpStream>>>| {
                 Client::new_app_connection(stream, server, id_connection, streams_shared)
             },
-            move |streams_shared: Arc<Mutex<HashMap<u16, TcpStream>>>, server: &mut TcpStream, fd: i32| {
-                Client::server_new_message(streams_shared, server, fd)
-            },
+            move |streams_shared: Arc<Mutex<HashMap<u16, TcpStream>>>,
+                  server: &mut TcpStream,
+                  fd: i32| { Client::server_new_message(streams_shared, server, fd) },
         );
 
         tcp.connect();
@@ -65,7 +65,6 @@ impl Client {
         id_connection: u16,
         streams_shared: Arc<Mutex<HashMap<u16, TcpStream>>>,
     ) {
-        let (original_addr, original_port) = Client::get_original_addr(&stream);
         loop {
             let mut buf = [0; 200];
 
@@ -74,33 +73,45 @@ impl Client {
                     if ct == 0 {
                         break;
                     }
+                    if let Ok((original_addr, original_port)) = Client::get_original_addr(&stream) {
+                        Server::print_new_connection_info(original_addr, original_port);
 
-                    let messages = protocol::code_string(
-                        &buf,
-                        ct,
-                        id_connection,
-                        0,
-                        original_addr,
-                        original_port,
-                    );
+                        let messages = protocol::code_string(
+                            &buf,
+                            ct,
+                            id_connection,
+                            0,
+                            original_addr,
+                            original_port,
+                        );
 
-                    for msg in messages {
-                        server.write_all(&msg).unwrap();
+                        for msg in messages {
+                            server.write_all(&msg).unwrap();
+                        }
+                    } else {
+                        Client::remove_app_connection_ref(&streams_shared, id_connection);
                     }
                 }
                 Err(_) => {
-                    let mut streams_shared_ref = streams_shared.lock().unwrap();
-                    streams_shared_ref.remove(&id_connection);
+                    Client::remove_app_connection_ref(&streams_shared, id_connection);
                     break;
                 }
             }
         }
     }
 
+    fn remove_app_connection_ref(
+        streams_shared: &Arc<Mutex<HashMap<u16, TcpStream>>>,
+        id_connection: u16,
+    ) {
+        let mut streams_shared_ref = streams_shared.lock().unwrap();
+        streams_shared_ref.remove(&id_connection);
+    }
+
     fn server_new_message(
         streams_shared: Arc<Mutex<HashMap<u16, TcpStream>>>,
         server: &mut TcpStream,
-        fd: i32
+        fd: i32,
     ) {
         let mut remain: Vec<u8> = Vec::new();
         loop {
@@ -130,7 +141,7 @@ impl Client {
                                     streams_shared_ref.remove(&msg.1).unwrap();
                                     continue;
                                 }
-                                stream.write_all(&msg.0).unwrap();
+                                if let Ok(_) = stream.write_all(&msg.0) {}
                             }
                             None => {}
                         }
@@ -149,23 +160,25 @@ impl Client {
         }
     }
 
-    fn get_original_addr(stream: &TcpStream) -> (u32, u16) {
+    fn get_original_addr(stream: &TcpStream) -> Result<(u32, u16), &'static str> {
         let sock_fd = stream.as_raw_fd();
-        let original_addr = socket::getsockopt(sock_fd, sockopt::OriginalDst).unwrap();
-        println!(
-            "{}, addr: {}.{}.{}.{}, port: {}",
-            original_addr.sin_addr.s_addr,
-            original_addr.sin_addr.s_addr & 255,
-            (original_addr.sin_addr.s_addr >> 8) & 255,
-            (original_addr.sin_addr.s_addr >> 16) & 255,
-            (original_addr.sin_addr.s_addr >> 24) & 255,
-            u16::from_be(original_addr.sin_port)
-        );
+        if let Ok(original_addr) = socket::getsockopt(sock_fd, sockopt::OriginalDst) {
+            println!(
+                "{}, addr: {}.{}.{}.{}, port: {}",
+                original_addr.sin_addr.s_addr,
+                original_addr.sin_addr.s_addr & 255,
+                (original_addr.sin_addr.s_addr >> 8) & 255,
+                (original_addr.sin_addr.s_addr >> 16) & 255,
+                (original_addr.sin_addr.s_addr >> 24) & 255,
+                u16::from_be(original_addr.sin_port)
+            );
 
-        (
-            original_addr.sin_addr.s_addr,
-            u16::from_be(original_addr.sin_port),
-        )
+            return Ok((
+                original_addr.sin_addr.s_addr,
+                u16::from_be(original_addr.sin_port),
+            ));
+        }
+        Err("Fail to extract ORIGINAL_DST")
     }
 }
 
@@ -218,16 +231,23 @@ impl Server {
                         let mut stream_dest: TcpStream;
                         let stream_exist: bool;
                         {
-                            stream_exist = redirection_map.lock().unwrap().contains_key(&msg_id);
+                            let redirection_map_clone = redirection_map.clone();
+                            stream_exist = redirection_map_clone.lock().unwrap().contains_key(&msg_id);
                         }
                         if !stream_exist {
-                            stream_dest = Server::open_new_redirection_connection(
+                            if let Ok(stream_res) = Server::open_new_redirection_connection(
                                 msg_id,
                                 addr,
                                 port,
                                 &client,
                                 &redirection_map,
-                            );
+                            ) {
+                                stream_dest = stream_res;
+                            } else {
+                                let mut client_ref = client.try_clone().expect("asdf");
+                                Server::send_connection_fails_to_client(msg_id, &mut client_ref);
+                                continue;
+                            }
                         } else {
                             let rf = redirection_map.lock().unwrap();
                             stream_dest = rf.get(&msg_id).unwrap().try_clone().expect("error");
@@ -255,8 +275,9 @@ impl Server {
         port: u16,
         client: &TcpStream,
         redirection_map: &Arc<Mutex<HashMap<u16, TcpStream>>>,
-    ) -> TcpStream {
+    ) -> Result<TcpStream, &'static str> {
         let stream_dest: TcpStream;
+        Server::print_new_connection_info(addr, port);
         match TcpStream::connect(format!(
             "{}.{}.{}.{}:{}",
             addr & 255,
@@ -288,9 +309,10 @@ impl Server {
                                 let mut rf = redirection_map_ref_clone.lock().unwrap();
                                 rf.remove(&msg_id_ref);
 
-                                let close_buff =
-                                    protocol::code_block(b"", 0, msg_id_ref, CONNECTION_FAIL, 0, 0);
-                                client_ref.write_all(&close_buff).unwrap();
+                                Server::send_connection_fails_to_client(
+                                    msg_id_ref,
+                                    &mut client_ref,
+                                );
                                 break;
                             }
 
@@ -308,12 +330,14 @@ impl Server {
                     }
                 });
             }
-            Err(err) => {
-                // send disconnection to the client
-                panic!("Error connecting to destination: {:?}", err);
-            }
+            Err(_) => return Err("Error connecting to destination"),
         }
-        stream_dest
+        Ok(stream_dest)
+    }
+
+    fn send_connection_fails_to_client(msg_id_ref: u16, client_ref: &mut TcpStream) {
+        let close_buff = protocol::code_block(b"", 0, msg_id_ref, CONNECTION_FAIL, 0, 0);
+        client_ref.write_all(&close_buff).unwrap();
     }
 
     fn print_new_connection_info(addr: u32, port: u16) {

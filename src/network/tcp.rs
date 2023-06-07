@@ -74,15 +74,18 @@ impl TcpClient {
                 Ok(stream) => {
                     self.increase_id_cont();
 
-                    let mut shared_map_ref = self.shared_map.lock().unwrap();
+                    let mut stream_read;
+                    {
+                        let mut shared_map_ref = self.shared_map.lock().unwrap();
 
-                    shared_map_ref.insert(self.id_cont, stream);
+                        shared_map_ref.insert(self.id_cont, stream);
 
-                    let mut stream_read = shared_map_ref
-                        .get(&self.id_cont)
-                        .unwrap()
-                        .try_clone()
-                        .expect("Error clonning application stream");
+                        stream_read = shared_map_ref
+                            .get(&self.id_cont)
+                            .unwrap()
+                            .try_clone()
+                            .expect("Error clonning application stream");
+                    }
                     let mut server_write = to_server_stream.try_clone().expect("Error clonning");
 
                     let shared_map_copy = self.shared_map.clone();
