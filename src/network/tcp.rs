@@ -16,6 +16,7 @@
 
 use std::collections::HashMap;
 use std::net::{TcpListener, TcpStream};
+use std::os::fd::AsRawFd;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -30,7 +31,7 @@ pub struct TcpClient {
         id_connection: u16,
         streams_shared: Arc<Mutex<HashMap<u16, TcpStream>>>,
     ),
-    server_new_message_event: fn(Arc<Mutex<HashMap<u16, TcpStream>>>, &mut TcpStream),
+    server_new_message_event: fn(Arc<Mutex<HashMap<u16, TcpStream>>>, &mut TcpStream, fd: i32),
 }
 impl TcpClient {
     pub fn new(
@@ -42,7 +43,7 @@ impl TcpClient {
             id_connection: u16,
             streams_shared: Arc<Mutex<HashMap<u16, TcpStream>>>,
         ),
-        server_new_message_event: fn(Arc<Mutex<HashMap<u16, TcpStream>>>, &mut TcpStream),
+        server_new_message_event: fn(Arc<Mutex<HashMap<u16, TcpStream>>>, &mut TcpStream, fd: i32),
     ) -> TcpClient {
         TcpClient {
             client_port,
@@ -63,8 +64,9 @@ impl TcpClient {
         let mut server_read = to_server_stream.try_clone().expect("Error clonning");
         let shared_map_copy = self.shared_map.clone();
         let server_new_message_event = self.server_new_message_event;
+        let fd = listener.as_raw_fd();
         thread::spawn(move || {
-            (server_new_message_event)(shared_map_copy, &mut server_read);
+            (server_new_message_event)(shared_map_copy, &mut server_read, fd);
         });
 
         for stream in listener.incoming() {
@@ -95,7 +97,10 @@ impl TcpClient {
                         );
                     });
                 }
-                Err(_) => println!("couldn't get client: "),
+                Err(_) => {
+                    println!("Traffic listener is close.");
+                    break;
+                }
             }
         }
     }

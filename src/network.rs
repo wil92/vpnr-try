@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-use nix::sys::socket::{self, sockopt};
+use nix::sys::socket::{self, sockopt, Shutdown};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -51,8 +51,8 @@ impl Client {
                   streams_shared: Arc<Mutex<HashMap<u16, TcpStream>>>| {
                 Client::new_app_connection(stream, server, id_connection, streams_shared)
             },
-            move |streams_shared: Arc<Mutex<HashMap<u16, TcpStream>>>, server: &mut TcpStream| {
-                Client::server_new_message(streams_shared, server)
+            move |streams_shared: Arc<Mutex<HashMap<u16, TcpStream>>>, server: &mut TcpStream, fd: i32| {
+                Client::server_new_message(streams_shared, server, fd)
             },
         );
 
@@ -100,6 +100,7 @@ impl Client {
     fn server_new_message(
         streams_shared: Arc<Mutex<HashMap<u16, TcpStream>>>,
         server: &mut TcpStream,
+        fd: i32
     ) {
         let mut remain: Vec<u8> = Vec::new();
         loop {
@@ -107,6 +108,7 @@ impl Client {
             match server.read(&mut buf) {
                 Ok(ct) => {
                     if ct == 0 {
+                        socket::shutdown(fd, Shutdown::Both).unwrap();
                         break;
                     }
 
