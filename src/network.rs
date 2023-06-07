@@ -232,7 +232,8 @@ impl Server {
                         let stream_exist: bool;
                         {
                             let redirection_map_clone = redirection_map.clone();
-                            stream_exist = redirection_map_clone.lock().unwrap().contains_key(&msg_id);
+                            stream_exist =
+                                redirection_map_clone.lock().unwrap().contains_key(&msg_id);
                         }
                         if !stream_exist {
                             if let Ok(stream_res) = Server::open_new_redirection_connection(
@@ -337,7 +338,7 @@ impl Server {
 
     fn send_connection_fails_to_client(msg_id_ref: u16, client_ref: &mut TcpStream) {
         let close_buff = protocol::code_block(b"", 0, msg_id_ref, CONNECTION_FAIL, 0, 0);
-        client_ref.write_all(&close_buff).unwrap();
+        if let Ok(_) = client_ref.write_all(&close_buff) {}
     }
 
     fn print_new_connection_info(addr: u32, port: u16) {

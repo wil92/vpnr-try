@@ -40,14 +40,20 @@ pub fn code_string(
             msg_len += 1;
             byt = bytes.next();
         }
-        res.push(code_block(
+        let mut res_msg = code_block(
             &msg_byte,
             msg_len,
             id_connection,
             flags,
             addr,
             port,
-        ));
+        );
+
+        for i in 1..res_msg.len() {
+            res_msg[i] = u8::to_be(res_msg[i]);
+        }
+
+        res.push(res_msg);
     }
     res
 }
@@ -61,23 +67,23 @@ pub fn decode_string(data: &[u8], data_len: usize) -> (Vec<(Vec<u8>, u16, u8, u3
         }
         let size = data[shift] as usize;
         if size > 0 && data_len >= size + shift {
-            let mut id = (data[shift + 1] as u16) << 8;
-            id += data[shift + 2] as u16;
+            let mut id = (u8::from_be(data[shift + 1]) as u16) << 8;
+            id += u8::from_be(data[shift + 2]) as u16;
 
-            let flags = data[shift + 3] as u8;
+            let flags = u8::from_be(data[shift + 3]);
 
-            let mut addr = (data[shift + 4] as u32) << 24;
-            addr += (data[shift + 5] as u32) << 16;
-            addr += (data[shift + 6] as u32) << 8;
-            addr += data[shift + 7] as u32;
+            let mut addr = (u8::from_be(data[shift + 4]) as u32) << 24;
+            addr += (u8::from_be(data[shift + 5]) as u32) << 16;
+            addr += (u8::from_be(data[shift + 6]) as u32) << 8;
+            addr += u8::from_be(data[shift + 7]) as u32;
 
-            let mut port = (data[shift + 8] as u16) << 8;
-            port += data[shift + 9] as u16;
+            let mut port = (u8::from_be(data[shift + 8]) as u16) << 8;
+            port += u8::from_be(data[shift + 9]) as u16;
 
             let mut msg = Vec::new();
 
             for i in 0..(size - 10) {
-                msg.push(data[shift + i + 10]);
+                msg.push(u8::from_be(data[shift + i + 10]));
             }
 
             shift += size;
