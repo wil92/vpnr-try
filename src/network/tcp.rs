@@ -115,33 +115,50 @@ impl TcpClient {
 
 pub struct TcpServer {
     port: i32,
-    redirection_map: Arc<Mutex<HashMap<u16, TcpStream>>>,
-    new_client_connection_event: fn(&mut TcpStream, Arc<Mutex<HashMap<u16, TcpStream>>>),
+    client_ct: i32,
+    redirection_client_map: Arc<Mutex<HashMap<i32, HashMap<u16, TcpStream>>>>,
+    new_client_connection_event:
+        fn(&mut TcpStream, i32, Arc<Mutex<HashMap<i32, HashMap<u16, TcpStream>>>>),
 }
 
 impl TcpServer {
     pub fn new(
         port: i32,
-        new_client_connection_event: fn(&mut TcpStream, Arc<Mutex<HashMap<u16, TcpStream>>>),
+        new_client_connection_event: fn(
+            &mut TcpStream,
+            client_id: i32,
+            Arc<Mutex<HashMap<i32, HashMap<u16, TcpStream>>>>,
+        ),
     ) -> TcpServer {
         TcpServer {
             port,
-            redirection_map: Arc::new(Mutex::new(HashMap::new())),
+            client_ct: 0,
+            redirection_client_map: Arc::new(Mutex::new(HashMap::new())),
             new_client_connection_event,
         }
     }
 
-    pub fn tcp_server(&self) {
+    pub fn tcp_server(&mut self) {
         let listener = TcpListener::bind(format!("0.0.0.0:{}", self.port)).unwrap();
 
         for stream in listener.incoming() {
             match stream {
                 Ok(stream) => {
                     let new_client_connection_event = self.new_client_connection_event;
-                    let redirection_map = self.redirection_map.clone();
+                    let redirection_client_map = self.redirection_client_map.clone();
+                    {
+                        let mut rfm = redirection_client_map.lock().unwrap();
+                        rfm.insert(self.client_ct, HashMap::new());
+                    }
                     let mut stream_ref = stream.try_clone().unwrap();
+                    let client_id = self.client_ct;
+                    self.client_ct += 1;
                     thread::spawn(move || {
-                        (new_client_connection_event)(&mut stream_ref, redirection_map);
+                        (new_client_connection_event)(
+                            &mut stream_ref,
+                            client_id,
+                            redirection_client_map,
+                        );
                     });
                 }
                 Err(_) => println!("couldn't get client: "),

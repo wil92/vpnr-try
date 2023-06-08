@@ -71,6 +71,7 @@ impl Client {
             match stream.read(&mut buf) {
                 Ok(ct) => {
                     if ct == 0 {
+                        // todo send disconection to the server
                         break;
                     }
                     if let Ok((original_addr, original_port)) = Client::get_original_addr(&stream) {
@@ -125,32 +126,25 @@ impl Client {
 
                     let mut ext_buf: Vec<u8> = Vec::new();
                     ext_buf.append(&mut remain);
-                    for i in 0..ct {
-                        ext_buf.push(buf[i]);
-                    }
+                    ext_buf.append(&mut buf[0..ct].to_vec());
 
                     let (messages, rd) = protocol::decode_string(&ext_buf, ext_buf.len());
                     for msg in messages {
                         let mut streams_shared_ref = streams_shared.lock().unwrap();
                         let flags = msg.2;
 
-                        match streams_shared_ref.get(&msg.1) {
-                            Some(mut stream) => {
-                                if flags & CONNECTION_FAIL != 0 {
-                                    if let Ok(_) = stream.shutdown(std::net::Shutdown::Both) {}
-                                    streams_shared_ref.remove(&msg.1).unwrap();
-                                    continue;
-                                }
-                                if let Ok(_) = stream.write_all(&msg.0) {}
+                        if let Some(mut stream) = streams_shared_ref.get(&msg.1) {
+                            if flags & CONNECTION_FAIL != 0 {
+                                if stream.shutdown(std::net::Shutdown::Both).is_ok() {}
+                                streams_shared_ref.remove(&msg.1).unwrap();
+                                continue;
                             }
-                            None => {}
+                            if stream.write_all(&msg.0).is_ok() {}
                         }
                     }
 
                     if rd != ext_buf.len() {
-                        for i in rd..ext_buf.len() {
-                            remain.push(ext_buf[i]);
-                        }
+                        remain.append(&mut ext_buf[rd..ext_buf.len()].to_vec());
                     }
                 }
                 Err(_) => {
@@ -192,10 +186,12 @@ impl Server {
     pub fn run(&self, port: i32) {
         println!("Server start on port: {}", port);
 
-        let tcp = TcpServer::new(
+        let mut tcp = TcpServer::new(
             port,
-            move |client: &mut TcpStream, redirection_map: Arc<Mutex<HashMap<u16, TcpStream>>>| {
-                Server::new_client_connection(client, redirection_map);
+            move |client: &mut TcpStream,
+                  client_id: i32,
+                  redirection_map: Arc<Mutex<HashMap<i32, HashMap<u16, TcpStream>>>>| {
+                Server::new_client_connection(client, client_id, redirection_map);
             },
         );
 
@@ -204,7 +200,8 @@ impl Server {
 
     fn new_client_connection(
         client: &mut TcpStream,
-        redirection_map: Arc<Mutex<HashMap<u16, TcpStream>>>,
+        client_id: i32,
+        redirection_map: Arc<Mutex<HashMap<i32, HashMap<u16, TcpStream>>>>,
     ) {
         let mut remain: Vec<u8> = Vec::new();
         loop {
@@ -216,9 +213,7 @@ impl Server {
                     }
                     let mut ext_buf: Vec<u8> = Vec::new();
                     ext_buf.append(&mut remain);
-                    for i in 0..ct {
-                        ext_buf.push(buf[i]);
-                    }
+                    ext_buf.append(&mut buf[0..ct].to_vec());
 
                     let (messages, rd) = protocol::decode_string(&ext_buf, ext_buf.len());
                     for msg in messages {
@@ -232,8 +227,12 @@ impl Server {
                         let stream_exist: bool;
                         {
                             let redirection_map_clone = redirection_map.clone();
-                            stream_exist =
-                                redirection_map_clone.lock().unwrap().contains_key(&msg_id);
+                            stream_exist = redirection_map_clone
+                                .lock()
+                                .unwrap()
+                                .get(&client_id)
+                                .unwrap()
+                                .contains_key(&msg_id);
                         }
                         if !stream_exist {
                             if let Ok(stream_res) = Server::open_new_redirection_connection(
@@ -241,6 +240,7 @@ impl Server {
                                 addr,
                                 port,
                                 &client,
+                                client_id,
                                 &redirection_map,
                             ) {
                                 stream_dest = stream_res;
@@ -250,7 +250,8 @@ impl Server {
                                 continue;
                             }
                         } else {
-                            let rf = redirection_map.lock().unwrap();
+                            let rfm = redirection_map.lock().unwrap();
+                            let rf = rfm.get(&client_id).unwrap();
                             stream_dest = rf.get(&msg_id).unwrap().try_clone().expect("error");
                         }
 
@@ -258,9 +259,7 @@ impl Server {
                     }
 
                     if rd != ext_buf.len() {
-                        for i in rd..ext_buf.len() {
-                            remain.push(ext_buf[i]);
-                        }
+                        remain.append(&mut ext_buf[rd..ext_buf.len()].to_vec());
                     }
                 }
                 Err(_) => {
@@ -275,7 +274,8 @@ impl Server {
         addr: u32,
         port: u16,
         client: &TcpStream,
-        redirection_map: &Arc<Mutex<HashMap<u16, TcpStream>>>,
+        client_id: i32,
+        redirection_map: &Arc<Mutex<HashMap<i32, HashMap<u16, TcpStream>>>>,
     ) -> Result<TcpStream, &'static str> {
         let stream_dest: TcpStream;
         Server::print_new_connection_info(addr, port);
@@ -289,7 +289,8 @@ impl Server {
         )) {
             Ok(stream) => {
                 {
-                    let mut rf = redirection_map.lock().unwrap();
+                    let mut rfm = redirection_map.lock().unwrap();
+                    let rf = rfm.get_mut(&client_id).unwrap();
                     rf.insert(msg_id, stream);
                     stream_dest = rf.get(&msg_id).unwrap().try_clone().expect("error");
                 }
@@ -307,12 +308,11 @@ impl Server {
                     match stream_ref.read(&mut buf) {
                         Ok(ct) => {
                             if ct == 0 {
-                                let mut rf = redirection_map_ref_clone.lock().unwrap();
-                                rf.remove(&msg_id_ref);
-
-                                Server::send_connection_fails_to_client(
+                                Server::handler_redirection_disconnection_or_error(
                                     msg_id_ref,
                                     &mut client_ref,
+                                    client_id,
+                                    &redirection_map_ref_clone,
                                 );
                                 break;
                             }
@@ -320,13 +320,18 @@ impl Server {
                             let messages = protocol::code_string(&buf, ct, msg_id_ref, 0, 0, 0);
 
                             for msg in messages {
-                                if let Err(_) = client_ref.write_all(&msg) {
+                                if client_ref.write_all(&msg).is_err() {
                                     break;
                                 }
                             }
                         }
                         Err(_) => {
-                            println!("asdf");
+                            Server::handler_redirection_disconnection_or_error(
+                                msg_id_ref,
+                                &mut client_ref,
+                                client_id,
+                                &redirection_map_ref_clone,
+                            );
                         }
                     }
                 });
@@ -336,9 +341,24 @@ impl Server {
         Ok(stream_dest)
     }
 
+    fn handler_redirection_disconnection_or_error(
+        msg_id_ref: u16,
+        client_ref: &mut TcpStream,
+        client_id: i32,
+        redirection_map_ref_clone: &Arc<Mutex<HashMap<i32, HashMap<u16, TcpStream>>>>,
+    ) {
+        {
+            let mut rfm = redirection_map_ref_clone.lock().unwrap();
+            let rf = rfm.get_mut(&client_id).unwrap();
+            rf.remove(&msg_id_ref);
+        }
+
+        Server::send_connection_fails_to_client(msg_id_ref, client_ref);
+    }
+
     fn send_connection_fails_to_client(msg_id_ref: u16, client_ref: &mut TcpStream) {
         let close_buff = protocol::code_block(b"", 0, msg_id_ref, CONNECTION_FAIL, 0, 0);
-        if let Ok(_) = client_ref.write_all(&close_buff) {}
+        if client_ref.write_all(&close_buff).is_ok() {}
     }
 
     fn print_new_connection_info(addr: u32, port: u16) {

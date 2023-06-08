@@ -23,31 +23,24 @@ pub fn code_string(
     port: u16,
 ) -> Vec<Vec<u8>> {
     let mut res: Vec<Vec<u8>> = Vec::new();
+
     let mut data_vec = Vec::new();
-    for i in 0..data_len {
-        data_vec.push(data[i]);
-    }
+    data_vec.append(&mut data[0..data_len].to_vec());
+
     let mut bytes = data_vec.into_iter();
     let mut byt = bytes.next();
     loop {
-        if byt == None {
+        if None.eq(&byt) {
             break;
         }
         let mut msg_byte: [u8; 200] = [0; 200];
         let mut msg_len = 0;
-        while msg_len < 200 && byt != None {
+        while msg_len < 200 && None.ne(&byt) {
             msg_byte[msg_len] = byt.unwrap();
             msg_len += 1;
             byt = bytes.next();
         }
-        let mut res_msg = code_block(
-            &msg_byte,
-            msg_len,
-            id_connection,
-            flags,
-            addr,
-            port,
-        );
+        let mut res_msg = code_block(&msg_byte, msg_len, id_connection, flags, addr, port);
 
         for i in 1..res_msg.len() {
             res_msg[i] = u8::to_be(res_msg[i]);
@@ -113,9 +106,7 @@ pub fn code_block(
     get_addr(&mut buf, addr);
     get_port(&mut buf, port);
 
-    for i in 0..msg_len {
-        buf.push(msg[i]);
-    }
+    buf.append(&mut msg[0..msg_len].to_vec());
 
     buf
 }
@@ -171,8 +162,8 @@ mod tests {
         assert_eq!(res[0].4, 0);
 
         assert_eq!(data.len(), res[0].0.len());
-        for i in 0..res[0].0.len() {
-            assert_eq!(origin_data[i], res[0].0[i]);
+        for (i, it) in res[0].0.iter().enumerate() {
+            assert_eq!(origin_data[i], *it);
         }
     }
 
@@ -196,9 +187,8 @@ mod tests {
         assert_eq!(res[0][8], 0);
         assert_eq!(res[0][9], 80);
 
-        let data_bytes = data.as_bytes();
-        for i in 0..data.len() {
-            assert_eq!(data_bytes[i], res[0][i + 10]);
+        for (i, it) in data.as_bytes().iter().enumerate() {
+            assert_eq!(*it, res[0][i + 10]);
         }
     }
 
@@ -206,7 +196,7 @@ mod tests {
     fn protocol_code_string_test_chunks() {
         let mut data = String::from("");
         for _ in 0..2150 {
-            data.push_str("w");
+            data.push('w');
         }
         let res = protocol::code_string(data.as_bytes(), data.len(), 1, 1, 0, 0);
         assert_eq!(res.len(), 11);
