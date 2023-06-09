@@ -53,7 +53,7 @@ sudo iptables -t nat -F
     - [x] Send all received trafic in the client to the server, using the protocol
     - [x] Get addr and port from redirection information
     - [x] Connect server to the destination addr/port and send response to the client
-- [ ] Send notification to the client when a redirection connection is down, so the client can close it also with the applicationr
-- [ ] Massive refactorization :P
-- [ ] Handle server disconnection from the client (try to connect againg to the server).
+- [x] Send notification to the client when a redirection connection is down, so the client can close it also with the applicationr
+- [x] Massive refactorization :P
+- [x] Handle server disconnection from the client (try to connect againg to the server).
 - [ ] Handle iptables to redirect all trafic to the client app.
