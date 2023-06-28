@@ -2,14 +2,21 @@ use iptables::Chain;
 use iptables::IpVersion;
 use iptables::Table;
 
-pub fn routing_rules(client_ip: &str, client_port: i32) {
+//! 
+//! Iptables uses a set of rules to determine how to filter network traffic. 
+//! Each rule specifies what type of traffic to filter and what action to take on matching traffic.
+//! 
 
-    //Create a new iptable
+pub fn routing_rules(client_ip: String, client_port: i32) {
+//! 
+//! This function is responsible for redirecting all traffic to the client application
+//!
+
     let mut ip_table = Table::new(IpVersion::Ipv4);
 
     //Add a prerouting rule to redirect all traffic to the client application
     let new_rule = table
-        .Chain(Chain::Prerouting)
+        .chain(Chain::Prerouting)
         .create_rule()
         .destination(client_ip)
         .target(format!("REDIRECT --to-ports {}", client_port))
