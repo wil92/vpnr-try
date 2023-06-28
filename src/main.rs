@@ -17,10 +17,13 @@
 use std::env;
 
 use network::{Client, Server};
+use iptables_rule;
+use std::io;
 
 pub mod network;
+pub mod iptable_rule;
 
-fn main() {
+fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
     let mut run_server = false;
     for it in args {
@@ -34,6 +37,21 @@ fn main() {
     } else {
         start_client();
     }
+
+    let mut client_ip: String = String::new();
+    let mut port: String = String::new();
+    let stdin = io::stdin();
+    
+    print!("input the client ip: ");
+    stdin.lock().read_line(&mut client_ip).unwrap();
+    print!("input the client port: ");
+    stdin.lock().read_line(&mut client_port).unwrap();
+
+    let client_port: i32 = port.trim().parse().expect("Input not an integer");
+
+    iptable_rule::routing_rules(client_ip, client_port);
+
+    Ok(())
 }
 
 fn start_server() {
