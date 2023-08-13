@@ -2,6 +2,14 @@
 name = "vpnr-try"
 version = "0.1.0"
 edition = "2021"
+authors = ["Guillermo Gonzales Jimenez <ggjnez92@gmail.com>", "Sergio Triana Escobedo <stescobedo.31@gmail.com>"]
+license = "MIT OR Apache-2.0"
+description = "Make a VPN service with rust"
+homepage = "https://github.com/wil92/vpnr-try"
+repository = "https://github.com/wil92/vpnr-try"
+keywords = ["vpn"]
+readme = "README.md"
+categories = ["lib"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
