@@ -13,19 +13,17 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
-
-use std::env;
-
-use network::{Client, Server};
-use iptables_rule;
-use std::io;
-
 pub mod network;
 pub mod iptable_rule;
+
+use std::env;
+use network::{Client, Server};
+use std::io::{self, BufRead};
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
     let mut run_server = false;
+
     for it in args {
         if it == "-s" {
             run_server = true;
@@ -45,7 +43,7 @@ fn main() -> io::Result<()> {
     print!("input the client ip: ");
     stdin.lock().read_line(&mut client_ip).unwrap();
     print!("input the client port: ");
-    stdin.lock().read_line(&mut client_port).unwrap();
+    stdin.lock().read_line(&mut port).unwrap();
 
     let client_port: i32 = port.trim().parse().expect("Input not an integer");
 

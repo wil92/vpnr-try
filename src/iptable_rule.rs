@@ -1,31 +1,32 @@
-use iptables::Chain;
-use iptables::IpVersion;
-use iptables::Table;
+use std::process::Command;
 
-//! 
-//! Iptables uses a set of rules to determine how to filter network traffic. 
-//! Each rule specifies what type of traffic to filter and what action to take on matching traffic.
-//! 
+// 
+// Iptables uses a set of rules to determine how to filter network traffic. 
+// Each rule specifies what type of traffic to filter and what action to take on matching traffic.
+// 
 
 pub fn routing_rules(client_ip: String, client_port: i32) {
-//! 
-//! This function is responsible for redirecting all traffic to the client application
-//!
+// 
+//This function is responsible for redirecting all traffic to the client application
+//
+    let rule_iptable = format!(
+        "iptables -t nat -A PREROUTING -p tcp -j REDIRECT --to-ports {}",
+        client_port
+    );
 
-    let mut ip_table = Table::new(IpVersion::Ipv4);
+    let status = Command::new("bash").arg("-c").arg(&rule_iptable).status();
 
-    //Add a prerouting rule to redirect all traffic to the client application
-    let new_rule = table
-        .chain(Chain::Prerouting)
-        .create_rule()
-        .destination(client_ip)
-        .target(format!("REDIRECT --to-ports {}", client_port))
-        .build();
-
-    //Insert the rule into the iptable chain
-    if let Err(err) = table.insert_rule(new_rule) {
-        eprintln!("Failed to insert iptables rule: {}", err);
-        return;
+    match status {
+        Ok(exit_status) => {
+            if exit_status.success() {
+                println!("iptables rule added successfully.");
+            } else {
+                eprintln!("Error adding iptables rule: {:?}", exit_status);
+            }
+        }
+        Err(err) => {
+            eprintln!("Error executing iptables command: {:?}", err);
+        }
     }
 
     println!("All traffic was redirected to {}:{}", client_ip, client_port);
